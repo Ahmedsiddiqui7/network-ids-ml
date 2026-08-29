@@ -10,3 +10,6 @@ joblib
 pytest
 matplotlib
 seaborn
+pyarrow
+nbconvert
+ipykernel
