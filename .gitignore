@@ -1,0 +1,28 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.ipynb_checkpoints/
+.vscode/
+CLAUDE.md
+docs/Master_Architecture_Document.md
+
+# Data — ignore real data files, keep the folder structure
+data/raw/*
+!data/raw/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Artifacts — ignore trained models/preprocessors, keep the folder structure
+artifacts/preprocessor/*
+!artifacts/preprocessor/.gitkeep
+artifacts/models/*
+!artifacts/models/xgboost_v1
+artifacts/models/xgboost_v1/*
+!artifacts/models/xgboost_v1/.gitkeep
+
+# CSVs — ignore everywhere except the test fixture that's meant to be tracked
+*.csv
+!tests/fixtures/sample_flows.csv
