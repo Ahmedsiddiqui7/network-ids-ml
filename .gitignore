@@ -26,3 +26,5 @@ artifacts/models/xgboost_v1/*
 # CSVs — ignore everywhere except the test fixture that's meant to be tracked
 *.csv
 !tests/fixtures/sample_flows.csv
+
+.DS_Store
