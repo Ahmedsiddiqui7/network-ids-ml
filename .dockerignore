@@ -1,0 +1,29 @@
+# Build context exclusions for both docker/Dockerfile.api and
+# docker/Dockerfile.dashboard (context: .. in docker-compose.yml).
+#
+# Leading slashes anchor these to the context root -- .dockerignore follows
+# .gitignore matching rules, where an unanchored `data/` would also match
+# src/dashboard/data/ (which holds replay_flows.json, needed for the
+# dashboard build) and silently break it.
+#
+# /docs/ is excluded explicitly, not left to "implicit" COPY selectivity:
+# it holds Master_Architecture_Document.md, the private strategic document
+# (gitignored, but still present on disk locally). Neither Dockerfile ever
+# COPYs docs/, but that only controls the final image layers -- the build
+# CONTEXT (everything under `context: ..` not excluded here) is tarred and
+# sent to the Docker daemon before any COPY filtering happens.
+/docs/
+
+/.git/
+/venv/
+__pycache__/
+*.pyc
+/.pytest_cache/
+
+/data/
+/notebooks/
+
+src/dashboard/node_modules/
+src/dashboard/.next/
+
+.DS_Store

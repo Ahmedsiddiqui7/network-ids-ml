@@ -73,6 +73,26 @@ transparency, excluded from the regression-gated macro-recall figure.
 | **PortScan** | 2 | 0 | 0 | 0 | 3 | 0 | 0 | 13617 | 1 |
 | **Web Attack** | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 319 |
 
+#### Replay-sample error analysis (Cycle 5)
+
+| Class | Test support | Errors | Error rate | Rows in replay sample | P(zero errors in sample) |
+|---|---|---|---|---|---|
+| BENIGN | 314472 | 350 | 0.111% | 40 | 95.6% |
+| Botnet | 293 | 1 | 0.341% | 15 | 95.0% |
+| Brute Force | 1373 | 0 | 0.000% | 20 | 100.0% |
+| DDoS | 19203 | 0 | 0.000% | 25 | 100.0% |
+| DoS | 29062 | 6 | 0.021% | 25 | 99.5% |
+| Heartbleed | 1 | 0 | 0.000% | 1 | 100.0% |
+| Infiltration | 6 | 0 | 0.000% | 6 | 100.0% |
+| PortScan | 13623 | 6 | 0.044% | 25 | 98.9% |
+| Web Attack | 322 | 3 | 0.932% | 15 | 86.9% |
+
+Combined probability of a zero-error draw across all 9 classes: **77.7%**.
+The Cycle 5 dashboard's replay fixture (`scripts/build_replay_sample.py`, 172 rows, fixed
+`RANDOM_SEED`) shows 0/172 incorrect predictions — this is the *expected* outcome given
+these real per-class error rates, not evidence the model is error-free or that the sample was
+curated. A different seed would plausibly draw at least one of the known error cases above.
+
 ### Random Forest baseline — test split
 
 - Macro-recall (7 stable classes): 0.9966
@@ -124,10 +144,13 @@ the one metric well-defined on an all-BENIGN holdout.
   attack family will be confidently misclassified as one of the 9 known classes (most
   likely BENIGN or the nearest-behaving family), not flagged as "unknown." Confidence
   thresholding is a forward-looking mitigation, not built in this cycle.
-- **Operating threshold:** Pillar 4.3 recommends picking a decision threshold that
-  maximizes recall subject to an FPR budget, using the validation-set PR curve, rather
-  than a bare 0.5 cutoff — this is a serving-time decision, deferred to Cycle 4 (the
-  inference API), not built here.
+- **Operating threshold:** built and applied, not deferred — Pillar 4.3's
+  recall-maximizing threshold at an explicit FPR budget is computed from the
+  validation-set ROC curve (`src/models/tune_threshold.py`, Cycle 4), applied at serving
+  time to the API's `is_malicious` decision, and shown as the marked operating point on
+  the dashboard's ROC curve (Cycle 5). Residual limitation: the 1% FPR budget is a fixed
+  constant chosen once against this training run's validation split, not automatically
+  re-tuned as traffic distribution shifts over time.
 - Metrics reflect the standard (uncorrected) CICIDS2017 label set (Pillar 2.2); known
   labeling/capture errors documented in `docs/DATASET_CARD.md` are not corrected here.
 - The near-perfect separability seen above (ROC-AUC ~1.0, most per-class F1 above 0.98)
@@ -135,3 +158,12 @@ the one metric well-defined on an all-BENIGN holdout.
   2.2) — synthetic attack tooling against a controlled testbed produces flows that are
   far more statistically distinct than real-world traffic — not evidence this model
   would generalize to production deployment.
+- **Docker Compose (Cycle 5) was written and code-reviewed but not runtime-verified** on
+  the development machine (macOS 12), where every available Docker backend is blocked —
+  Docker Desktop requires macOS 14+, and colima's only fallback (QEMU) could not build
+  because a required dependency chain is hosted on GNU mirrors this network cannot
+  reach. The full stack was instead verified end-to-end with the API and dashboard
+  running as local processes (`tests/integration/test_pipeline_end_to_end.py`), which
+  passed. `docker compose config` confirms `docker/docker-compose.yml` itself parses and
+  resolves correctly; the actual image builds remain to be confirmed on a machine with a
+  working Docker daemon.

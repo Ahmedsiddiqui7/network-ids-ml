@@ -1,0 +1,30 @@
+# Cycle 5 -- packages the Cycle 4 FastAPI service. artifacts/ (the trained
+# model + preprocessor) is gitignored real output, not baked into the image
+# -- docker-compose mounts it at runtime instead (docker-compose.yml).
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# libgomp1: XGBoost's Linux wheels dynamically link against the OpenMP
+# runtime rather than bundling it -- python:3.12-slim (Debian) doesn't ship
+# it by default, so `import xgboost` fails with "libgomp.so.1: cannot open
+# shared object file" without this. Same underlying dependency as the
+# macOS libomp fix in Cycle 3, different package manager.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Explicit, not `COPY src/ src/` -- src/dashboard/ lives under src/ too, and
+# the API image has no business carrying the Next.js app's source/deps.
+COPY src/__init__.py src/__init__.py
+COPY src/config.py src/config.py
+COPY src/api/ src/api/
+COPY src/models/ src/models/
+COPY src/preprocessing/ src/preprocessing/
+COPY pyproject.toml .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

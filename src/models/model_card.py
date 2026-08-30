@@ -5,12 +5,14 @@ src.models.leakage_check, since the card reports on both.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 from src.config import ARTIFACTS_DIR, MODELS_DIR
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS_DIR = REPO_ROOT / "docs"
+REPLAY_FLOWS_PATH = REPO_ROOT / "src" / "dashboard" / "data" / "replay_flows.json"
 
 LOW_CONFIDENCE_NOTE = " (low confidence -- insufficient sample size for a stable estimate)"
 
@@ -38,7 +40,64 @@ def _confusion_matrix_table(cm: list, labels: list) -> str:
     return header + "\n".join(rows)
 
 
-def generate_model_card(xgboost_metrics: dict, rf_metrics: dict, leakage_result: dict) -> str:
+def _replay_sample_error_analysis(xgb_test: dict, replay_flows_path: Path) -> str | None:
+    """Quantifies why the Cycle 5 dashboard's fixed replay sample can
+    legitimately show zero incorrect predictions: not because the sample
+    was curated or the model is error-free, but because the real
+    per-class error rates (from this same confusion matrix) are all under
+    1%, and the sample only draws a few dozen rows per class. Reads the
+    actual checked-in replay_flows.json rather than SAMPLE_COUNTS from
+    scripts/build_replay_sample.py, so this reports the real composition
+    of the artifact, not just the sampling script's target (which can
+    differ for a class with fewer rows available than requested).
+    Returns None if the fixture hasn't been generated yet -- this runs as
+    part of write_model_card(), which must not hard-fail the rest of the
+    card over an optional Cycle 5 artifact.
+    """
+    if not replay_flows_path.exists():
+        return None
+
+    replay_flows = json.loads(replay_flows_path.read_text())
+    sample_counts = Counter(row["true_label"] for row in replay_flows)
+
+    labels = xgb_test["confusion_matrix_labels"]
+    cm = xgb_test["confusion_matrix"]
+
+    rows = []
+    p_zero_all = 1.0
+    for i, label in enumerate(labels):
+        total = sum(cm[i])
+        correct = cm[i][i]
+        errors = total - correct
+        err_rate = errors / total if total else 0.0
+        n = sample_counts.get(label, 0)
+        p_zero = (1 - err_rate) ** n
+        p_zero_all *= p_zero
+        rows.append((label, total, errors, err_rate, n, p_zero))
+
+    header = "| Class | Test support | Errors | Error rate | Rows in replay sample | P(zero errors in sample) |\n"
+    header += "|---|---|---|---|---|---|\n"
+    table_rows = "\n".join(
+        f"| {label} | {total} | {errors} | {err_rate * 100:.3f}% | {n} | {p_zero * 100:.1f}% |"
+        for label, total, errors, err_rate, n, p_zero in rows
+    )
+    total_sampled = sum(sample_counts.values())
+
+    return f"""{header}{table_rows}
+
+Combined probability of a zero-error draw across all {len(labels)} classes: **{p_zero_all * 100:.1f}%**.
+The Cycle 5 dashboard's replay fixture (`scripts/build_replay_sample.py`, {total_sampled} rows, fixed
+`RANDOM_SEED`) shows 0/{total_sampled} incorrect predictions — this is the *expected* outcome given
+these real per-class error rates, not evidence the model is error-free or that the sample was
+curated. A different seed would plausibly draw at least one of the known error cases above."""
+
+
+def generate_model_card(
+    xgboost_metrics: dict,
+    rf_metrics: dict,
+    leakage_result: dict,
+    replay_flows_path: Path = REPLAY_FLOWS_PATH,
+) -> str:
     xgb_test = xgboost_metrics["test"]
     rf_test = rf_metrics["test"]
     imbalance = xgboost_metrics["imbalance_config"]
@@ -53,6 +112,17 @@ def generate_model_card(xgboost_metrics: dict, rf_metrics: dict, leakage_result:
 
     botnet_precision_gap = xgb_test["per_class"]["Botnet"]["precision"] - rf_test["per_class"]["Botnet"]["precision"]
     fpr_gap = rf_test["aggregate_benign_fpr"] - xgb_test["aggregate_benign_fpr"]
+
+    replay_analysis = _replay_sample_error_analysis(xgb_test, replay_flows_path)
+    replay_section = (
+        f"""
+#### Replay-sample error analysis (Cycle 5)
+
+{replay_analysis}
+"""
+        if replay_analysis
+        else ""
+    )
 
     return f"""# Model Card — Network Threat & Intrusion Detection
 
@@ -108,7 +178,7 @@ transparency, excluded from the regression-gated macro-recall figure.
 #### Confusion matrix (XGBoost, test split)
 
 {_confusion_matrix_table(xgb_test['confusion_matrix'], xgb_test['confusion_matrix_labels'])}
-
+{replay_section}
 ### Random Forest baseline — test split
 
 - Macro-recall (7 stable classes): {rf_test['macro_recall_stable_classes']:.4f}
@@ -150,10 +220,13 @@ the one metric well-defined on an all-BENIGN holdout.
   attack family will be confidently misclassified as one of the 9 known classes (most
   likely BENIGN or the nearest-behaving family), not flagged as "unknown." Confidence
   thresholding is a forward-looking mitigation, not built in this cycle.
-- **Operating threshold:** Pillar 4.3 recommends picking a decision threshold that
-  maximizes recall subject to an FPR budget, using the validation-set PR curve, rather
-  than a bare 0.5 cutoff — this is a serving-time decision, deferred to Cycle 4 (the
-  inference API), not built here.
+- **Operating threshold:** built and applied, not deferred — Pillar 4.3's
+  recall-maximizing threshold at an explicit FPR budget is computed from the
+  validation-set ROC curve (`src/models/tune_threshold.py`, Cycle 4), applied at serving
+  time to the API's `is_malicious` decision, and shown as the marked operating point on
+  the dashboard's ROC curve (Cycle 5). Residual limitation: the 1% FPR budget is a fixed
+  constant chosen once against this training run's validation split, not automatically
+  re-tuned as traffic distribution shifts over time.
 - Metrics reflect the standard (uncorrected) CICIDS2017 label set (Pillar 2.2); known
   labeling/capture errors documented in `docs/DATASET_CARD.md` are not corrected here.
 - The near-perfect separability seen above (ROC-AUC ~1.0, most per-class F1 above 0.98)
@@ -161,6 +234,15 @@ the one metric well-defined on an all-BENIGN holdout.
   2.2) — synthetic attack tooling against a controlled testbed produces flows that are
   far more statistically distinct than real-world traffic — not evidence this model
   would generalize to production deployment.
+- **Docker Compose (Cycle 5) was written and code-reviewed but not runtime-verified** on
+  the development machine (macOS 12), where every available Docker backend is blocked —
+  Docker Desktop requires macOS 14+, and colima's only fallback (QEMU) could not build
+  because a required dependency chain is hosted on GNU mirrors this network cannot
+  reach. The full stack was instead verified end-to-end with the API and dashboard
+  running as local processes (`tests/integration/test_pipeline_end_to_end.py`), which
+  passed. `docker compose config` confirms `docker/docker-compose.yml` itself parses and
+  resolves correctly; the actual image builds remain to be confirmed on a machine with a
+  working Docker daemon.
 """
 
 

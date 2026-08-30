@@ -39,6 +39,7 @@ class ModelService:
         self.metrics: dict = json.loads((model_dir / "metrics.json").read_text())
         self.threshold_info: dict = json.loads((model_dir / "threshold.json").read_text())
         self.threshold: float = self.threshold_info["threshold"]
+        self.curves: dict = json.loads((model_dir / "curves.json").read_text())
 
     def _to_dataframe(self, flows: list[FlowFeatures]) -> pd.DataFrame:
         rows = [flow.model_dump(by_alias=True) for flow in flows]
@@ -85,4 +86,8 @@ class ModelService:
                 "aggregate_benign_fpr": test_metrics["aggregate_benign_fpr"],
             },
             "operating_threshold": self.threshold_info,
+            "confusion_matrix": test_metrics["confusion_matrix"],
+            "confusion_matrix_labels": test_metrics["confusion_matrix_labels"],
+            "roc_curve": self.curves["roc"],
+            "pr_curve": self.curves["pr"],
         }

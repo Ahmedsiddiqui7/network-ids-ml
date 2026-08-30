@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* Single fixed dark theme -- deliberate, not adapting to prefers-color-scheme.
+   Console instrumentation, not a themeable app. Amber is reserved
+   exclusively for the malicious/attack signal (curve trace, alert badges,
+   log-feed risk values) -- never used decoratively elsewhere. */
+@theme {
+  --color-bg: #0b1220;
+  --color-panel: #141b2c;
+  --color-border: #22304a;
+  --color-text-primary: #e4e8f1;
+  --color-text-secondary: #8a93a6;
+  --color-amber: #f5a623;
+  --color-focus: #5b8def;
+
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  --animate-row-in: row-in 260ms ease-out;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+/* Oscilloscope-trace treatment for the ROC/PR curve lines (recharts <Line>
+   forwards className to the underlying SVG <path>). drop-shadow, not
+   box-shadow -- box-shadow can't follow an SVG stroke. */
+.trace-glow {
+  filter: drop-shadow(0 0 1px var(--color-amber)) drop-shadow(0 0 6px color-mix(in srgb, var(--color-amber) 55%, transparent));
+}
