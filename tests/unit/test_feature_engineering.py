@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,6 +12,7 @@ from src.preprocessing.feature_engineering import (
     drop_duplicate_columns,
     prune_correlated_features,
 )
+from src.config import REPO_ROOT
 from src.preprocessing.pipeline import Preprocessor, build_label_map, decode_labels, encode_labels
 
 
@@ -179,6 +183,49 @@ def test_preprocessor_round_trip_persistence(train_df, tmp_path):
 
     np.testing.assert_allclose(in_memory_output, reloaded_output)
     assert reloaded.feature_list == pre.feature_list
+
+
+def test_save_raises_if_class_pickled_under_main(train_df, tmp_path, monkeypatch):
+    """Regression test for the real bug hit in Cycle 4: pipeline.py run via
+    `python -m src.preprocessing.pipeline` binds Preprocessor's __module__
+    to "__main__", producing an artifact that silently fails to load from
+    any other entrypoint (e.g. the inference API). save() must refuse
+    loudly instead of writing a broken artifact."""
+    pre = Preprocessor()
+    pre.fit(train_df)
+
+    monkeypatch.setattr(Preprocessor, "__module__", "__main__")
+    with pytest.raises(RuntimeError, match="__main__"):
+        pre.save(tmp_path / "preprocessor_v1.pkl")
+
+
+def test_saved_artifact_loads_from_independent_subprocess(train_df, tmp_path):
+    """The portability regression this bug class needs: unpickle the saved
+    artifact from a genuinely separate interpreter (not the process that
+    wrote it), which is exactly the scenario that silently broke before
+    save()'s __main__ guard existed -- a same-process round trip (as in
+    test_preprocessor_round_trip_persistence above) can't catch it, since
+    the writer's own module identity is still in scope there."""
+    pre = Preprocessor()
+    pre.fit(train_df)
+
+    artifact_path = tmp_path / "preprocessor_v1.pkl"
+    pre.save(artifact_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from src.preprocessing.pipeline import Preprocessor; "
+            f"p = Preprocessor.load({str(artifact_path)!r}); "
+            "print('loaded OK', len(p.feature_list))",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "loaded OK" in result.stdout
 
 
 def test_force_include_features_survive_top_n_cutoff(train_df):

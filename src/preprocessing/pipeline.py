@@ -63,6 +63,25 @@ class Preprocessor:
         return self.transform(train_df)
 
     def save(self, path) -> None:
+        # Pickling a class whose __module__ is "__main__" (which happens if
+        # this file is ever run directly, e.g. `python -m
+        # src.preprocessing.pipeline` or `python src/preprocessing/
+        # pipeline.py`) bakes that into the pickle stream. The artifact then
+        # only unpickles in a process whose own __main__ happens to define
+        # Preprocessor -- it silently fails to load from any other
+        # entrypoint (the inference API included). Refuse at save time
+        # instead of failing later at load time. Always invoke via a normal
+        # import instead, e.g. `python -c "from src.preprocessing.pipeline
+        # import run; run()"`.
+        if type(self).__module__ == "__main__":
+            raise RuntimeError(
+                "Refusing to save: Preprocessor's class is bound to the "
+                "'__main__' module in this process, which would make the "
+                "saved artifact unloadable from any other entrypoint. Run "
+                "this via a normal module import (e.g. "
+                "`python -c \"from src.preprocessing.pipeline import run; run()\"`), "
+                "not `python -m src.preprocessing.pipeline` or as a script."
+            )
         joblib.dump(self, path)
 
     @classmethod

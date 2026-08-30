@@ -6,6 +6,7 @@ imbalanced-learn
 fastapi
 uvicorn[standard]
 pydantic
+httpx2
 joblib
 pytest
 matplotlib

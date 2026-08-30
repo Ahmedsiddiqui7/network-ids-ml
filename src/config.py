@@ -41,3 +41,7 @@ SMOTE_TARGET_COUNTS = {"Infiltration": 300}
 # Day-based leakage smell test (Cycle 3 verification, MAD 2.5)
 LODO_HELD_OUT_DAY = "Monday-WorkingHours"
 LEAKAGE_SMELL_FPR_GAP_THRESHOLD = 0.02
+
+# Inference API (Pillar 7 Cycle 4 / Pillar 3.3 / Pillar 4.3)
+API_MODEL_VERSION = "xgboost_v1"
+THRESHOLD_FPR_BUDGET = 0.01
