@@ -85,7 +85,7 @@ write such an artifact and raises instead, so this fails loudly if it happens.
 ```
 venv/bin/uvicorn src.api.main:app --port 8000
 # in another terminal
-cd src/dashboard && API_BASE_URL=http://localhost:8000 npm run dev
+cd src/dashboard && API_BASE_URL=http://localhost:8000 npm run dev -- --port 3000
 ```
 Dashboard: http://localhost:3000. API docs: http://localhost:8000/docs.
 
