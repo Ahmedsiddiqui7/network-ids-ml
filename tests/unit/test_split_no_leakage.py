@@ -1,9 +1,11 @@
+import inspect
 import shutil
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+import src.preprocessing.split as split_module
 from src.preprocessing.clean import clean_flows, load_raw_csvs, normalize_labels
 from src.preprocessing.split import stratified_group_split
 
@@ -65,8 +67,13 @@ def test_split_proportions_approximate_ratios(cleaned_df):
     assert len(test_df) / total == pytest.approx(0.15, abs=0.1)
 
 
-def test_preprocessor_artifact_does_not_exist_yet():
-    """Proves fitting hasn't happened before the split (Cycle 1 must not
-    produce a fitted scaler/preprocessor — that's Cycle 2's job)."""
-    preprocessor_path = REPO_ROOT / "artifacts" / "preprocessor" / "preprocessor_v1.pkl"
-    assert not preprocessor_path.exists()
+def test_split_module_has_no_preprocessor_fitting_dependency():
+    """Cycle 1's split step must not depend on or trigger any fitted
+    scaler/preprocessor -- that logic belongs to Cycle 2's pipeline.py,
+    fit strictly after the split. Asserted structurally (no import/name
+    coupling to fitting code) rather than by checking whether
+    artifacts/preprocessor/preprocessor_v1.pkl exists on disk, since once
+    Cycle 2 has legitimately run that file exists from then on."""
+    source = inspect.getsource(split_module)
+    for forbidden in ("Preprocessor", "RobustScaler", "SimpleImputer", "sklearn"):
+        assert forbidden not in source, f"split.py must not reference {forbidden}"
